@@ -1,0 +1,80 @@
+trigger:
+  branches:
+    include: [ main ]
+pr:
+  branches:
+    include: [ main ]
+
+parameters:
+  - name: action
+    displayName: Terraform action
+    type: string
+    default: plan
+    values: [plan, apply, destroy]
+  - name: stackPath
+    displayName: Stack path
+    type: string
+    default: stacks/data-science-lz-core
+  - name: terraformVersion
+    displayName: Terraform version
+    type: string
+    default: 1.7.5
+
+variables:
+  - name: TF_IN_AUTOMATION
+    value: "true"
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Terraform
+    displayName: Terraform
+    jobs:
+      - job: Run
+        displayName: Run
+        steps:
+          - checkout: self
+
+          - task: TerraformInstaller@1
+            displayName: Install Terraform
+            inputs:
+              terraformVersion: ${{ parameters.terraformVersion }}
+
+          - task: AzureCLI@2
+            displayName: Fmt + Validate + ${{ parameters.action }}
+            inputs:
+              azureSubscription: $(AZURE_SERVICE_CONNECTION)
+              scriptType: bash
+              scriptLocation: inlineScript
+              addSpnToEnvironment: true
+              inlineScript: |
+                set -euo pipefail
+
+                echo "==> terraform fmt"
+                terraform fmt -recursive
+
+                echo "==> init/validate stack (no backend)"
+                cd "${{ parameters.stackPath }}"
+                terraform init -backend=false -input=false -no-color
+                terraform validate -no-color
+
+                echo "==> init with backend (for plan/apply/destroy)"
+                key="$(TF_BACKEND_KEY)"
+                if [ -z "${key}" ]; then
+                  key="${{ parameters.stackPath }}/terraform.tfstate"
+                fi
+
+                terraform init -upgrade -input=false -no-color                   -backend-config="resource_group_name=$(TF_BACKEND_RG)"                   -backend-config="storage_account_name=$(TF_BACKEND_STORAGE)"                   -backend-config="container_name=$(TF_BACKEND_CONTAINER)"                   -backend-config="key=$key"
+
+                if [ "${{ parameters.action }}" = "plan" ]; then
+                  terraform plan -no-color -out=tfplan
+                elif [ "${{ parameters.action }}" = "apply" ]; then
+                  terraform plan -no-color -out=tfplan
+                  terraform apply -no-color -auto-approve tfplan
+                elif [ "${{ parameters.action }}" = "destroy" ]; then
+                  terraform destroy -no-color -auto-approve
+                else
+                  echo "Unsupported action: ${{ parameters.action }}"
+                  exit 1
+                fi

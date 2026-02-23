@@ -1,0 +1,1 @@
+output "note" { value = "azureml-workspace add-on placeholder (not implemented yet)" }
