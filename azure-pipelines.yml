@@ -11,10 +11,12 @@ parameters:
     type: string
     default: plan
     values: [plan, apply, destroy]
+
   - name: stackPath
     displayName: Stack path
     type: string
-    default: stacks/data-science-lz-core
+    default: stacks/data-lz-core
+
   - name: terraformVersion
     displayName: Terraform version
     type: string
@@ -60,20 +62,24 @@ stages:
                 terraform validate -no-color
 
                 echo "==> init with backend (for plan/apply/destroy)"
-                key="$(TF_BACKEND_KEY)"
-                if [ -z "${key}" ]; then
+                key="${TF_BACKEND_KEY:-}"
+                if [ -z "$key" ]; then
                   key="${{ parameters.stackPath }}/terraform.tfstate"
                 fi
 
-                terraform init -upgrade -input=false -no-color                   -backend-config="resource_group_name=$(TF_BACKEND_RG)"                   -backend-config="storage_account_name=$(TF_BACKEND_STORAGE)"                   -backend-config="container_name=$(TF_BACKEND_CONTAINER)"                   -backend-config="key=$key"
+                terraform init -upgrade -input=false -no-color \
+                  -backend-config="resource_group_name=$(TF_BACKEND_RG)" \
+                  -backend-config="storage_account_name=$(TF_BACKEND_STORAGE)" \
+                  -backend-config="container_name=$(TF_BACKEND_CONTAINER)" \
+                  -backend-config="key=$key"
 
                 if [ "${{ parameters.action }}" = "plan" ]; then
-                  terraform plan -no-color -out=tfplan
+                  terraform plan -no-color -var-file="terraform.tfvars" -out=tfplan
                 elif [ "${{ parameters.action }}" = "apply" ]; then
-                  terraform plan -no-color -out=tfplan
+                  terraform plan -no-color -var-file="terraform.tfvars" -out=tfplan
                   terraform apply -no-color -auto-approve tfplan
                 elif [ "${{ parameters.action }}" = "destroy" ]; then
-                  terraform destroy -no-color -auto-approve
+                  terraform destroy -no-color -auto-approve -var-file="terraform.tfvars"
                 else
                   echo "Unsupported action: ${{ parameters.action }}"
                   exit 1
