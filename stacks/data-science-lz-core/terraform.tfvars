@@ -1,10 +1,9 @@
-# -----------------------
-# Stack identity / naming
-# Naming standard: resource-subname-env-projectname-location
-# -----------------------
-location                     = "eastus2"
-resource_group_name          = "rg-core-dev-dslz-eastus2"
+location                     = "westus3"
+resource_group_name          = "rg-core-dev-dslz-westus3"
 allow_resource_group_destroy = false
+
+spoke_subscription_id = "00000000-0000-0000-0000-000000000000"
+hub_subscription_id   = "00000000-0000-0000-0000-000000000000"
 
 tags = {
   Owner              = "mlops-team"
@@ -15,102 +14,64 @@ tags = {
   ManagedBy          = "terraform"
 }
 
-# -----------------------
-# Networking (minimal)
-# -----------------------
-vnet = {
-  name          = "vnet-spoke-dev-dslz-eastus2"
-  address_space = ["10.92.0.0/23"]
-}
+# ---------------------------
+# Networking
+# ---------------------------
+network_mode = "create"
 
-# One workload subnet + one private endpoint subnet (matches the design diagram)
-subnets = {
-  workload = {
-    name             = "snet-workload-dev-dslz-eastus2"
-    address_prefixes = ["10.92.0.0/24"]
-  }
+spoke_vnet_name          = "vnet-spoke-dev-dslz-westus3"
+spoke_vnet_address_space = ["10.92.0.0/23"]
+spoke_vnet_dns_servers   = []
 
-  private_endpoints = {
-    name             = "snet-pe-dev-dslz-eastus2"
-    address_prefixes = ["10.92.1.0/26"]
+workload_subnet_name                      = "snet-workload-dev-dslz-westus3"
+workload_subnet_address_prefixes          = ["10.92.0.0/24"]
+private_endpoints_subnet_name             = "snet-pe-dev-dslz-westus3"
+private_endpoints_subnet_address_prefixes = ["10.92.1.0/26"]
 
-    # AzureRM expects string values: "Enabled" / "Disabled"
-    private_endpoint_network_policies             = "Disabled"
-    private_link_service_network_policies_enabled = "Enabled"
-  }
-}
-
-# -----------------------
+# ---------------------------
 # Hub connectivity
-# -----------------------
-hub_subscription_id = "" # set if hub is in a different subscription
+# ---------------------------
+enable_vhub_connection    = true
+hub_virtual_hub_id        = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-hub-prod-westus3/providers/Microsoft.Network/virtualHubs/vhub-prod-westus3"
+vhub_connection_name      = "conn-dslz-dev-westus3"
+internet_security_enabled = true
 
-hub_connectivity = {
-  enabled           = true
-  connectivity_type = "vnet_peering" # or "vwan_virtual_hub"
-
-  # If peering: prefer hub_vnet_id, otherwise provide hub_vnet_name + hub_resource_group_name
-  hub_vnet_id             = ""
-  hub_vnet_name           = ""
-  hub_resource_group_name = ""
-  manage_hub_side_peering = false
-
-  # If vWAN:
-  virtual_hub_id             = ""
-  virtual_hub_route_table_id = ""
-  propagated_route_table_ids = []
-  labels                     = []
-}
-
-# -----------------------
-# Private DNS (hub-managed zones) - optional scaffolding
-# -----------------------
-private_dns = {
-  enabled                 = false
-  hub_private_dns_rg_name = "rg-dns-prod-dslz-eastus2"
-  zone_names = [
-    # Add only the zones your hub team manages centrally (examples):
-    # "privatelink.vaultcore.azure.net",
-    # "privatelink.azurecr.io",
-    # "privatelink.blob.core.windows.net"
-  ]
-}
-
-# -----------------------
-# Baseline shared resources (Core RG) - optional
-# NOTE: KV name is globally unique; Storage + ACR names cannot have hyphens.
-# -----------------------
+# ---------------------------
+# AML baseline resources
+# Log Analytics is the only piece intentionally left out for now.
+# ---------------------------
 log_analytics = {
-  enabled           = false
-  name              = "log-core-dev-dslz-eastus2"
-  retention_in_days = 30
+  enabled = false
+  name    = ""
 }
 
 application_insights = {
-  enabled          = false
-  name             = "appi-core-dev-dslz-eastus2"
+  enabled          = true
+  name             = "appi-core-dev-dslz-westus3"
   application_type = "web"
 }
 
 storage_account = {
-  enabled                         = false
-  name                            = "stdatadevdslzeastus201" # <-- replace; must be lowercase alphanumeric only (no spaces/no hyphens)
+  enabled                         = true
+  name                            = "stdslzdevwestus301"
+  account_replication_type        = "LRS"
+  min_tls_version                 = "TLS1_2"
   public_network_access_enabled   = false
   shared_access_key_enabled       = true
   allow_nested_items_to_be_public = false
 }
 
 container_registry = {
-  enabled                       = false
-  name                          = "crmlopsdevdslzeastus201" # <-- replace; must be alphanumeric only (no hyphens)
-  sku                           = "Standard"
-  admin_enabled                 = false
-  public_network_access_enabled = true
+  enabled                       = true
+  name                          = "crdslzdevwestus301"
+  sku                           = "Premium"
+  admin_enabled                 = true
+  public_network_access_enabled = false
 }
 
 key_vault = {
-  enabled                       = false
-  name                          = "kv-sec-dev-dslz-eastus2" # <-- replace if collision; must be globally unique
+  enabled                       = true
+  name                          = "kv-sec-dev-dslz-wus3"
   purge_protection_enabled      = true
   soft_delete_retention_days    = 7
   public_network_access_enabled = false
