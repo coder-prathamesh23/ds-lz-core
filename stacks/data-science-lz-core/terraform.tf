@@ -1,5 +1,6 @@
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.7.0"
+
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
@@ -12,13 +13,14 @@ terraform {
 
 provider "azurerm" {
   features {}
+  subscription_id = var.spoke_subscription_id
 }
 
-# Hub provider alias:
-# - If hub is same subscription: omit hub_subscription_id and this will behave the same as default provider.
-# - If hub is different subscription: set hub_subscription_id in tfvars.
 provider "azurerm" {
   alias = "hub"
   features {}
-  subscription_id = var.hub_subscription_id != "" ? var.hub_subscription_id : null
+  subscription_id = var.hub_subscription_id
+
+  # Cloud Services owns resource provider registration in the hub subscription.
+  resource_provider_registrations = "none"
 }
