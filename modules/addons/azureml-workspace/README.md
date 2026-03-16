@@ -1,10 +1,8 @@
-# azureml-workspace (optional add-on)
+# Module: azureml-workspace
 
-This is a reserved add-on module location for Azure Machine Learning (AML) resources.
+This module creates an Azure Machine Learning workspace and can optionally create a workspace private endpoint.
 
-**Intentionally minimal:** the Data Science core landing zone stays simple (network + connectivity + baseline shared services).
-AML workspace / compute / private endpoint patterns can be implemented here later.
-
-If you are not implementing AML yet, you can safely delete:
-- `modules/addons/azureml-workspace`
-- `stacks/addons/azureml-workspace`
+## Important notes
+- It does not create Private DNS zones.
+- If `enable_workspace_private_endpoint = true`, provide the existing central Private DNS zone IDs from Cloud Services.
+- The module accepts VNet and subnet IDs so the add-on remains aligned with the base landing zone networking contract, even if only the private endpoints subnet is used immediately.
