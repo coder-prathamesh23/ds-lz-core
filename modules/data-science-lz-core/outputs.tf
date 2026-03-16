@@ -1,16 +1,26 @@
 output "resource_group_id" {
-  value       = local.rg_id
-  description = "Resource group ID for the landing zone."
+  value       = var.resource_group_id
+  description = "Landing zone resource group ID."
 }
 
-output "vnet_id" {
-  value       = azurerm_virtual_network.spoke.id
+output "resource_group_name" {
+  value       = var.resource_group_name
+  description = "Landing zone resource group name."
+}
+
+output "spoke_vnet_id" {
+  value       = var.spoke_vnet_id
   description = "Spoke VNet ID."
 }
 
-output "subnet_ids" {
-  value       = { for k, s in azurerm_subnet.this : k => s.id }
-  description = "Map of subnet ids."
+output "workload_subnet_id" {
+  value       = var.workload_subnet_id
+  description = "Workload subnet ID."
+}
+
+output "private_endpoints_subnet_id" {
+  value       = var.private_endpoints_subnet_id
+  description = "Private endpoints subnet ID."
 }
 
 output "key_vault_id" {
@@ -20,7 +30,7 @@ output "key_vault_id" {
 
 output "log_analytics_workspace_id" {
   value       = try(azurerm_log_analytics_workspace.this[0].id, null)
-  description = "Log Analytics Workspace ID (if enabled)."
+  description = "Log Analytics workspace ID (if enabled)."
 }
 
 output "application_insights_id" {
@@ -36,4 +46,9 @@ output "storage_account_id" {
 output "container_registry_id" {
   value       = try(azurerm_container_registry.this[0].id, null)
   description = "Container Registry ID (if enabled)."
+}
+
+output "container_registry_admin_enabled" {
+  value       = try(azurerm_container_registry.this[0].admin_enabled, null)
+  description = "Whether the Container Registry has admin access enabled (if enabled)."
 }
