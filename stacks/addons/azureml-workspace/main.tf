@@ -1,33 +1,13 @@
-data "terraform_remote_state" "core" {
-  count   = var.core_remote_state.enabled ? 1 : 0
-  backend = "azurerm"
-
-  config = {
-    resource_group_name  = var.core_remote_state.resource_group_name
-    storage_account_name = var.core_remote_state.storage_account_name
-    container_name       = var.core_remote_state.container_name
-    key                  = var.core_remote_state.key
-    use_azuread_auth     = try(var.core_remote_state.use_azuread_auth, true)
-  }
-}
+data "azurerm_client_config" "current" {}
 
 locals {
-  core_outputs = var.core_remote_state.enabled ? data.terraform_remote_state.core[0].outputs : {}
+  workspace_private_endpoint_name = var.workspace_private_endpoint_name != "" ? var.workspace_private_endpoint_name : "pe-${var.ml_workspace_name}"
+  managed_network_parent_id       = "${azapi_resource.this.id}/managedNetworks/default"
+  resource_group_id               = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${var.resource_group_name}"
 
-  resolved_location            = var.location != "" ? var.location : try(local.core_outputs.location, "")
-  resolved_resource_group_name = var.resource_group_name != "" ? var.resource_group_name : try(local.core_outputs.resource_group_name, "")
-  resolved_tags                = length(var.tags) > 0 ? var.tags : try(local.core_outputs.tags, {})
-
-  resolved_application_insights_id = var.application_insights_id != "" ? var.application_insights_id : try(local.core_outputs.application_insights_id, "")
-  resolved_key_vault_id            = var.key_vault_id != "" ? var.key_vault_id : try(local.core_outputs.key_vault_id, "")
-  resolved_storage_account_id      = var.storage_account_id != "" ? var.storage_account_id : try(local.core_outputs.storage_account_id, "")
-  resolved_container_registry_id   = var.container_registry_id != "" ? var.container_registry_id : try(local.core_outputs.container_registry_id, "")
-
-  resolved_container_registry_admin_enabled = var.container_registry_id != "" ? var.container_registry_admin_enabled : try(local.core_outputs.container_registry_admin_enabled, false)
-
-  resolved_spoke_vnet_id               = var.spoke_vnet_id != "" ? var.spoke_vnet_id : try(local.core_outputs.spoke_vnet_id, "")
-  resolved_workload_subnet_id          = var.workload_subnet_id != "" ? var.workload_subnet_id : try(local.core_outputs.workload_subnet_id, "")
-  resolved_private_endpoints_subnet_id = var.private_endpoints_subnet_id != "" ? var.private_endpoints_subnet_id : try(local.core_outputs.private_endpoints_subnet_id, "")
+  aml_storage_rule_targets    = try(var.aml_primary_outbound_rules.enable_storage, true) ? toset(try(var.aml_primary_outbound_rules.storage_subresource_targets, ["blob"])) : toset([])
+  aml_acr_rule_targets        = try(var.aml_primary_outbound_rules.enable_acr, true) ? toset(try(var.aml_primary_outbound_rules.acr_subresource_targets, ["registry"])) : toset([])
+  shared_storage_rule_targets = var.shared_storage.enabled ? toset(var.shared_storage.subresource_targets) : toset([])
 }
 
 resource "terraform_data" "input_checks" {
@@ -42,38 +22,46 @@ resource "terraform_data" "input_checks" {
     }
 
     precondition {
-      condition     = local.resolved_location != ""
-      error_message = "location could not be resolved. Provide location directly or enable core_remote_state with a valid output."
+      condition     = var.application_insights_id != ""
+      error_message = "application_insights_id must be provided."
     }
 
     precondition {
-      condition     = local.resolved_resource_group_name != ""
-      error_message = "resource_group_name could not be resolved. Provide resource_group_name directly or enable core_remote_state with a valid output."
+      condition     = var.key_vault_id != ""
+      error_message = "key_vault_id must be provided."
     }
 
     precondition {
-      condition     = local.resolved_application_insights_id != ""
-      error_message = "application_insights_id could not be resolved. Enable the core baseline resource or pass the ID directly."
+      condition     = var.storage_account_id != ""
+      error_message = "storage_account_id must be provided."
     }
 
     precondition {
-      condition     = local.resolved_key_vault_id != ""
-      error_message = "key_vault_id could not be resolved. Enable the core baseline resource or pass the ID directly."
+      condition     = var.container_registry_id != ""
+      error_message = "container_registry_id must be provided."
     }
 
     precondition {
-      condition     = local.resolved_storage_account_id != ""
-      error_message = "storage_account_id could not be resolved. Enable the core baseline resource or pass the ID directly."
+      condition     = var.container_registry_admin_enabled
+      error_message = "The AML ACR must have admin access enabled for AML workspace association."
     }
 
     precondition {
-      condition     = local.resolved_container_registry_id != ""
-      error_message = "container_registry_id could not be resolved. Enable the core baseline resource or pass the ID directly."
+      condition = (
+        try(var.managed_network.isolation_mode, "AllowOnlyApprovedOutbound") != "Disabled"
+        || (
+          !try(var.aml_primary_outbound_rules.enable_storage, true)
+          && !try(var.aml_primary_outbound_rules.enable_key_vault, true)
+          && !try(var.aml_primary_outbound_rules.enable_acr, true)
+          && !var.shared_storage.enabled
+        )
+      )
+      error_message = "Managed outbound private endpoint rules require managed_network.isolation_mode to be enabled."
     }
 
     precondition {
-      condition     = var.enable_workspace_private_endpoint ? local.resolved_private_endpoints_subnet_id != "" : true
-      error_message = "enable_workspace_private_endpoint=true but private_endpoints_subnet_id could not be resolved."
+      condition     = var.enable_workspace_private_endpoint ? var.private_endpoints_subnet_id != "" : true
+      error_message = "enable_workspace_private_endpoint=true but private_endpoints_subnet_id is empty."
     }
 
     precondition {
@@ -82,47 +70,160 @@ resource "terraform_data" "input_checks" {
     }
 
     precondition {
-      condition = var.core_remote_state.enabled ? (
-        var.core_remote_state.resource_group_name != ""
-        && var.core_remote_state.storage_account_name != ""
-        && var.core_remote_state.container_name != ""
-        && var.core_remote_state.key != ""
-      ) : true
-      error_message = "core_remote_state.enabled=true requires resource_group_name, storage_account_name, container_name, and key."
+      condition     = var.shared_storage.enabled ? var.shared_storage.resource_id != "" : true
+      error_message = "shared_storage.enabled=true requires shared_storage.resource_id."
     }
   }
 }
 
-module "azureml_workspace" {
-  source = "../../../modules/addons/azureml-workspace"
+resource "azapi_resource" "this" {
+  type      = "Microsoft.MachineLearningServices/workspaces@2025-06-01"
+  name      = var.ml_workspace_name
+  parent_id = local.resource_group_id
+  location  = var.location
+  tags      = var.tags
 
-  location            = local.resolved_location
-  resource_group_name = local.resolved_resource_group_name
-  tags                = local.resolved_tags
+  identity {
+    type = "SystemAssigned"
+  }
 
-  ml_workspace_name             = var.ml_workspace_name
-  sku_name                      = var.sku_name
-  public_network_access_enabled = var.public_network_access_enabled
-  high_business_impact          = var.high_business_impact
+  body = {
+    sku = {
+      name = var.sku_name
+    }
 
-  managed_network = var.managed_network
+    properties = {
+      applicationInsights = var.application_insights_id
+      keyVault            = var.key_vault_id
+      storageAccount      = var.storage_account_id
+      containerRegistry   = var.container_registry_id
 
-  application_insights_id          = local.resolved_application_insights_id
-  key_vault_id                     = local.resolved_key_vault_id
-  storage_account_id               = local.resolved_storage_account_id
-  container_registry_id            = local.resolved_container_registry_id
-  container_registry_admin_enabled = local.resolved_container_registry_admin_enabled
+      hbiWorkspace       = var.high_business_impact
+      publicNetworkAccess = var.public_network_access_enabled ? "Enabled" : "Disabled"
+      provisionNetworkNow = try(var.managed_network.provision_on_creation_enabled, true)
 
-  spoke_vnet_id               = local.resolved_spoke_vnet_id
-  workload_subnet_id          = local.resolved_workload_subnet_id
-  private_endpoints_subnet_id = local.resolved_private_endpoints_subnet_id
+      managedNetwork = {
+        isolationMode = try(var.managed_network.isolation_mode, "AllowOnlyApprovedOutbound")
+      }
+    }
+  }
 
-  enable_workspace_private_endpoint = var.enable_workspace_private_endpoint
-  workspace_private_endpoint_name   = var.workspace_private_endpoint_name
-  workspace_private_dns_zone_ids    = var.workspace_private_dns_zone_ids
-
-  aml_primary_outbound_rules = var.aml_primary_outbound_rules
-  shared_storage             = var.shared_storage
+  schema_validation_enabled = false
+  response_export_values    = ["identity.principalId"]
 
   depends_on = [terraform_data.input_checks]
+}
+
+resource "azurerm_private_endpoint" "workspace" {
+  count               = var.enable_workspace_private_endpoint ? 1 : 0
+  name                = local.workspace_private_endpoint_name
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  subnet_id           = var.private_endpoints_subnet_id
+
+  private_service_connection {
+    name                           = local.workspace_private_endpoint_name
+    private_connection_resource_id = azapi_resource.this.id
+    is_manual_connection           = false
+    subresource_names              = var.workspace_private_service_subresource_names
+  }
+
+  private_dns_zone_group {
+    name                 = "aml-workspace-dns"
+    private_dns_zone_ids = var.workspace_private_dns_zone_ids
+  }
+
+  depends_on = [azapi_resource.this]
+}
+
+resource "azapi_resource" "aml_storage_outbound_rule" {
+  for_each = local.aml_storage_rule_targets
+
+  type      = "Microsoft.MachineLearningServices/workspaces/managedNetworks/outboundRules@2025-10-01-preview"
+  name      = each.value == "blob" ? "amlblob" : each.value == "dfs" ? "amldfs" : "amlstorage"
+  parent_id = local.managed_network_parent_id
+
+  body = {
+    properties = {
+      category = "UserDefined"
+      type     = "PrivateEndpoint"
+      destination = {
+        serviceResourceId = var.storage_account_id
+        subresourceTarget = each.value
+      }
+    }
+  }
+
+  schema_validation_enabled = false
+
+  depends_on = [azapi_resource.this]
+}
+
+resource "azapi_resource" "aml_key_vault_outbound_rule" {
+  count = try(var.aml_primary_outbound_rules.enable_key_vault, true) ? 1 : 0
+
+  type      = "Microsoft.MachineLearningServices/workspaces/managedNetworks/outboundRules@2025-10-01-preview"
+  name      = "amlvault"
+  parent_id = local.managed_network_parent_id
+
+  body = {
+    properties = {
+      category = "UserDefined"
+      type     = "PrivateEndpoint"
+      destination = {
+        serviceResourceId = var.key_vault_id
+        subresourceTarget = "vault"
+      }
+    }
+  }
+
+  schema_validation_enabled = false
+
+  depends_on = [azapi_resource.this]
+}
+
+resource "azapi_resource" "aml_acr_outbound_rule" {
+  for_each = local.aml_acr_rule_targets
+
+  type      = "Microsoft.MachineLearningServices/workspaces/managedNetworks/outboundRules@2025-10-01-preview"
+  name      = each.value == "registry" ? "amlacr" : "amlacrdata"
+  parent_id = local.managed_network_parent_id
+
+  body = {
+    properties = {
+      category = "UserDefined"
+      type     = "PrivateEndpoint"
+      destination = {
+        serviceResourceId = var.container_registry_id
+        subresourceTarget = each.value
+      }
+    }
+  }
+
+  schema_validation_enabled = false
+
+  depends_on = [azapi_resource.this]
+}
+
+resource "azapi_resource" "shared_storage_outbound_rule" {
+  for_each = local.shared_storage_rule_targets
+
+  type      = "Microsoft.MachineLearningServices/workspaces/managedNetworks/outboundRules@2025-10-01-preview"
+  name      = each.value == "blob" ? "sharedblob" : each.value == "dfs" ? "shareddfs" : "sharedstorage"
+  parent_id = local.managed_network_parent_id
+
+  body = {
+    properties = {
+      category = "UserDefined"
+      type     = "PrivateEndpoint"
+      destination = {
+        serviceResourceId = var.shared_storage.resource_id
+        subresourceTarget = each.value
+      }
+    }
+  }
+
+  schema_validation_enabled = false
+
+  depends_on = [azapi_resource.this]
 }
