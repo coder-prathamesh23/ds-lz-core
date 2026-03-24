@@ -52,7 +52,24 @@ stages:
               addSpnToEnvironment: true
               inlineScript: |
                 set -euo pipefail
+                      set -euo pipefail
+                      az extension add -n ml -y || az extension update -n ml
 
+                      az ml workspace provision-network \
+                        -g rg-core-dev-dslz-westus3 \
+                        -n mlw-dev-dslz-westus3
+
+                      echo "==> Workspace details after network provisioning"
+                      az ml workspace show \
+                        -g rg-core-dev-dslz-westus3 \
+                        -n mlw-dev-dslz-westus3 \
+                        -o jsonc || true
+
+                      echo "==> Current AML outbound rules"
+                      az ml workspace outbound-rule list \
+                        -g rg-core-dev-dslz-westus3 \
+                        -w mlw-dev-dslz-westus3 \
+                        -o table || true
                 echo "==> terraform fmt"
                 terraform fmt -recursive
 
