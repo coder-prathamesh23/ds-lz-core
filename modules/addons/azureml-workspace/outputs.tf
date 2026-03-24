@@ -1,15 +1,15 @@
 output "id" {
-  value       = azurerm_machine_learning_workspace.this.id
+  value       = azapi_resource.this.id
   description = "AML workspace ID."
 }
 
 output "name" {
-  value       = azurerm_machine_learning_workspace.this.name
+  value       = azapi_resource.this.name
   description = "AML workspace name."
 }
 
 output "principal_id" {
-  value       = azurerm_machine_learning_workspace.this.identity[0].principal_id
+  value       = try(azapi_resource.this.output.identity.principalId, null)
   description = "System-assigned managed identity principal ID."
 }
 
