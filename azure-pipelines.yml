@@ -90,6 +90,16 @@ stages:
                   -backend-config="container_name=$(TF_BACKEND_CONTAINER)" \
                   -backend-config="key=$key"
 
+if [ "${{ parameters.forceUnlock }}" = "true" ]; then
+  if [ -z "${{ parameters.terraformLockId }}" ]; then
+    echo "ERROR: forceUnlock=true but terraformLockId is empty"
+    exit 1
+  fi
+
+  echo "==> Forcing unlock for Terraform state"
+  terraform force-unlock -force "${{ parameters.terraformLockId }}"
+fi
+
                 if [ "${{ parameters.action }}" = "plan" ]; then
                   terraform plan -no-color -var-file="terraform.tfvars" -out=tfplan
                 elif [ "${{ parameters.action }}" = "apply" ]; then
