@@ -21,7 +21,15 @@ parameters:
     displayName: Terraform version
     type: string
     default: 1.7.5
-
+  - name: forceUnlock
+    displayName: Force unlock Terraform state
+    type: boolean
+    default: false
+  
+  - name: terraformLockId
+    displayName: Terraform lock ID
+    type: string
+    default: ""
 variables:
   - name: TF_IN_AUTOMATION
     value: "true"
